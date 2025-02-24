@@ -1,0 +1,280 @@
+---
+title: "Playoff1"
+author: "Abisai Lujan"
+date: "2025-02-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(nbastatR)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+**Read in Play Off Box Scores 2010-2024 dataset**
+First I will import and examin the starting data that Professor Mario provided. 
+
+```{r}
+play_off_box_scores_2010_2024 <- read.csv("../Starting Data/play_off_box_scores_2010_2024.csv")
+head(play_off_box_scores_2010_2024)
+```
+
+Check the dimensions of the dataset
+```{r}
+dim(play_off_box_scores_2010_2024)
+```
+There are 31,185 rows and 33 variables
+
+
+Lets explore the data variables and types
+```{r}
+str(play_off_box_scores_2010_2024)
+```
+
+Are there any missing values?
+Check for NA values
+```{r}
+sum(is.na(play_off_box_scores_2010_2024))
+```
+There are 31,185 missing values
+
+Where are the NA values located
+```{r}
+colSums((is.na(play_off_box_scores_2010_2024)))
+```
+We can see that the only column with missing values is jerseyNum. It has just as many rows of NA values as the total amount of rows in the dataset. However, lets make sure whether or not the column *only* has NA values.
+```{r}
+play_off_box_scores_2010_2024 %>%
+  select(jerseyNum) %>%
+  unique()
+```
+In fact, the jerseyNum column only holds NA values. 
+
+
+**Some Data Cleaning**
+I will remove the jerseyNum column as it holds no additional value than the playerId column does
+```{r}
+v2_play_off_box_scores_2010_2024 <- play_off_box_scores_2010_2024 %>%
+  select(-jerseyNum)
+head(v2_play_off_box_scores_2010_2024)
+```
+To confirm, lets observe which variables from the original dataset are not in the new dataset
+```{r}
+names_v1 <- names(play_off_box_scores_2010_2024)
+names_v2 <- names(v2_play_off_box_scores_2010_2024)
+
+setdiff(names_v1, names_v2)
+```
+
+
+For filtering purposes, lets change date variables (`season_year` and `game_date`) to numeric types
+```{r}
+pobs_2010_2024_num <- v2_play_off_box_scores_2010_2024 %>%
+  #remove the dashes and convert to numeric
+  mutate(season_year = as.numeric(gsub("-", "", season_year)),
+         game_date = as.numeric(gsub("-", "", game_date))
+         )
+pobs_2010_2024_num %>% 
+  select(season_year,
+         game_date) %>%
+  str()
+```
+
+
+\newpage
+**Read in Play off Totals 2010-2024**
+```{r}
+play_off_totals_2010_2024 <- read.csv("../Starting Data/play_off_totals_2010_2024.csv")
+head(play_off_totals_2010_2024)
+```
+
+
+Check the dimensions of the dataset
+```{r}
+dim(play_off_totals_2010_2024)
+```
+
+There are 2,362 rows and 57 variables.
+
+
+Lets explore the data variables and types
+```{r}
+str(play_off_totals_2010_2024)
+```
+Are there any missing values?
+Check for NA values
+```{r}
+sum(is.na(play_off_totals_2010_2024))
+```
+Where are the NA values located
+```{r}
+colSums((is.na(play_off_totals_2010_2024)))
+```
+Only AVAILABLE_FLAG has NA values. Does this column *only* have NA values?
+```{r}
+play_off_totals_2010_2024 %>%
+  select(AVAILABLE_FLAG) %>%
+  unique()
+```
+`AVAILABLE_FLAG` variable represents whether or not the data for this row is available. Im assuming that the NA values are unresolved, 1 represents only one opponent has stats in `play_off_box_scores_2010_2024`, and 2 means that both opponents have stats in `play_off_box_scores_2010_2024`
+
+Lets see how many rows in `AVAILABLE_FLAG` have NA values
+```{r}
+play_off_totals_2010_2024 %>%
+  filter(is.na(AVAILABLE_FLAG)) %>%
+  nrow()
+```
+How many rows in `AVAILABLE_FLAG` have a value of 0
+
+```{r}
+play_off_totals_2010_2024 %>%
+  filter(AVAILABLE_FLAG==0) %>%
+  nrow()
+```
+
+
+How many rows in `AVAILABLE_FLAG` have a value of 1
+
+```{r}
+play_off_totals_2010_2024 %>%
+  filter(AVAILABLE_FLAG==1) %>%
+  nrow()
+```
+
+How many rows in `AVAILABLE_FLAG` have a value of 2
+```{r}
+play_off_totals_2010_2024 %>%
+  filter(AVAILABLE_FLAG==2) %>%
+  nrow()
+```
+
+\newpage
+**Some Data Cleaning for Playoff Totals 2010-2024** 
+
+
+```{r}
+
+```
+
+
+
+
+\newpage
+**Read in Regular Season Box Scores 2010-2024 part 1** Regular Season Box regular_season_box_scores_2010_2024_part_1.csv
+
+```{r}
+regular_season_box_scores_2010_2024_part_1 <- read.csv("../Starting Data/regular_season_box_scores_2010_2024_part_1.csv")
+head(regular_season_box_scores_2010_2024_part_1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\newpage
+Random Code:
+
+```{r, eval=FALSE}
+play_off_box_scores_2010_2024 %>% 
+  filter(gameId==41100111)
+```
+
+Lets look at an arbitrary game, the Miami Heat vs the Boston Celtics on 6/3/12 (gameId=41100304)
+```{r, eval=FALSE}
+play_off_box_scores_2010_2024 %>%
+  filter(game_date==2012) 
+```
+For the Miami Heat vs Boston Celtics game on 6/3/12, (gameId=41100304), there are 26 rows.
+```{r, eval=FALSE}
+play_off_box_scores_2010_2024 %>%
+  filter(gameId == 41100304) %>%
+  select(teamId, teamCity, teamName) %>%
+  unique()
+```
+There are 2 teams involved which are the Miami Heat(1610612748) and the Boston Celtics(1610612738)
+
+
+
+For the Miami Heat vs Boston Celtics game on 6/3/12, Look at same game rows but specifically for Miami Heat. 
+First I will filter the data for team Miami Heat and extract its teamId. I will assign Miami Heat's teamId to its own variable
+```{r, eval=FALSE}
+mia_heat_id <- play_off_box_scores_2010_2024 %>%
+  filter(teamCity=="Miami" & teamName=="Heat") %>%
+  select(teamId) %>%
+  unique() %>%
+  #extracts the [1,1]th element
+  .[[1,1]]
+```
+
+For the Miami Heat vs Boston Celtics game on 6/3/12, Lets see how many rows Miami Heat has for this specific game 
+```{r, eval=FALSE}
+play_off_box_scores_2010_2024 %>%
+  filter(gameId == 41100304 & teamId==mia_heat_id)
+```
+For the Miami Heat vs Boston Celtics game on 6/3/12, There are 13 rows for Miami heat. 
+
+
+For the Miami Heat vs Boston Celtics game on 6/3/12, Lets see if there are 13 rows for each person on the Miami Heat team
+```{r, eval=FALSE}
+play_off_box_scores_2010_2024 %>%
+  filter(gameId == 41100304 & teamId==mia_heat_id) %>%
+  select(personId) %>%
+  unique() 
+```
+Looks like all 13 separate Miami Heat rows for this game represent each player's box score statistics
+
+
+
+
+For the Miami Heat vs Boston Celtics game on 6/3/12, Lets look at the rows for Boston Celtics, how many rows there are for the team, and if they represent the 13 players on the team.
+```{r, eval=FALSE}
+#First I will create a variable for Boston Celtics' teamId
+bos_cel_id <- play_off_box_scores_2010_2024 %>% 
+  filter(teamCity=="Boston" & teamName=="Celtics") %>%
+  select(teamId) %>% 
+  unique() %>%
+  #extract [1,1]th element
+  .[[1,1]]
+  
+#Next I will filter this game's rows for the Boston Celtics   
+play_off_box_scores_2010_2024 %>% 
+  filter(gameId==41100304 & teamId==bos_cel_id)
+  
+```
+
+
+
+
+
