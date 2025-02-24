@@ -1,0 +1,162 @@
+---
+title: "STOR538_Playoff"
+author: "Veronica Upadhyay"
+date: "2025-02-21"
+output: html_document
+---
+
+Package Bank
+```{r}
+library(readr)
+library(dplyr)
+library(stringr)
+```
+# Clean + Merge
+## Read
+```{r message=FALSE}
+# Playoff Datasets------
+PO_BoxScores <- read_csv("/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/Starting Data/play_off_box_scores_2010_2024.csv")
+PO_Totals <- read_csv("/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/Starting Data/play_off_totals_2010_2024.csv")
+# Regular Season Datasets------
+RS_BoxScores_P1 <- read_csv("/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/Starting Data/regular_season_box_scores_2010_2024_part_1.csv")
+RS_BoxScores_P2 <- read_csv("/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/Starting Data/regular_season_box_scores_2010_2024_part_2.csv")
+RS_BoxScores_P3 <- read_csv("/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/Starting Data/regular_season_box_scores_2010_2024_part_3.csv")
+RS_Totals <- read_csv("/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/Starting Data/regular_season_totals_2010_2024.csv")
+```
+
+## Examine
+```{r eval=FALSE, include=FALSE}
+# A) Missing Values
+colSums(is.na(PO_Totals)) # available flag 336 missing values
+sum(PO_Totals$AVAILABLE_FLAG == 0, na.rm = TRUE) # available flag has 30 zeros
+colSums(is.na(RS_Totals)) # avialable flag has 4454 missing values
+sum(RS_Totals$AVAILABLE_FLAG == 0, na.rm = TRUE) # 128 zeros
+# ------------------------------------------------
+# B) Duplicates
+duplicated(PO_BoxScores_RAW)
+```
+
+## Clean
+```{r}
+# A) Remove rows with 0 or NA in AVAILABLE_FLAG bc "data unavailable" (README)
+PO_Totals <- PO_Totals %>% 
+  filter(!is.na(AVAILABLE_FLAG) & AVAILABLE_FLAG != 0)
+
+RS_Totals <- RS_Totals %>% 
+  filter(!is.na(AVAILABLE_FLAG) & AVAILABLE_FLAG != 0)
+# ------------------------------------------------
+# B) Only on of the data sets had duplicates
+PO_BoxScores <- distinct(PO_BoxScores)
+```
+
+## Merge
+```{r}
+# The P1, P2, P3 have the same columns
+    # so horizontally append w bind_rows
+RS_BoxScores <- bind_rows(RS_BoxScores_P1, RS_BoxScores_P2, RS_BoxScores_P3)
+
+# ------------------------------------------------
+# Merge based on game and team ID
+    # Match datatypes before merge; otherwise causing error
+RS_BoxScores <- RS_BoxScores %>%
+  mutate(gameId = as.numeric(gameId), teamId = as.numeric(teamId))
+PO_BoxScores <- PO_BoxScores %>%
+  mutate(gameId = as.numeric(gameId), teamId = as.numeric(teamId))
+RS_Totals <- RS_Totals %>%
+  mutate(GAME_ID = as.numeric(GAME_ID), TEAM_ID = as.numeric(TEAM_ID))
+PO_Totals <- PO_Totals %>%
+  mutate(GAME_ID = as.numeric(GAME_ID), TEAM_ID = as.numeric(TEAM_ID))
+
+    # Merge by only matching GameIds and TeamIds; a few rows get eliminated here
+RS <- inner_join(
+  RS_BoxScores, RS_Totals, 
+  by = c("gameId" = "GAME_ID", "teamId" = "TEAM_ID"))
+PO <- inner_join(
+  PO_BoxScores, PO_Totals, 
+  by = c("gameId" = "GAME_ID", "teamId" = "TEAM_ID"))
+
+# ------------------------------------------------
+# Final merge
+NBA_Data <- bind_rows(RS, PO) %>%
+    # Remove some columns
+    select(-(teamSlug), -(comment), -(jerseyNum),
+             -(SEASON_YEAR), -(TEAM_ABBREVIATION),
+             -(TEAM_NAME), -(MATCHUP)) %>%
+
+    # Make an opponent column
+  mutate(opponentTricode = str_sub(matchup, -3)) %>%
+  select(teamTricode, opponentTricode, everything())  %>%
+  
+    # Arrange as how Mario asked
+  arrange(teamId, game_date, opponentTricode) 
+```
+
+## > Effective Field Goal %
+Formula:
+http://www.crackedsidewalks.com/2022/07/who-will-score-part-v-calculating-efg.html
+
+- **FGM**: Field goals made.
+- **FGA**: Field goals attempted.
+- **FG3M**: Three-point field goals made.
+```{r}
+NBA_Data <- NBA_Data %>%
+  mutate(eFG_Percentage = (FGM + 0.5*FG3M) / FGA)
+```
+
+
+# Break Into H vs A Dataset
+vs indicates home team
+@ indicates away team
+```{r}
+# Create Home and Away datasets
+NBA_Home <- NBA_Data %>% filter(str_detect(matchup, "vs\\."))
+NBA_Away <- NBA_Data %>% filter(str_detect(matchup, "@"))
+
+write_csv(NBA_Home, "/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/NBA_Home.csv")
+write_csv(NBA_Away, "/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/NBA_Away.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Outside Data
+# Read
+nbastatR Dataset
+Each row is a unique gameID
+```{r message=FALSE}
+nbastatR <- read_csv("/Users/veronicaupadhyay/Downloads/STOR 538 Playoff/Data2025.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
