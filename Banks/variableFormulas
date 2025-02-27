@@ -1,0 +1,4 @@
+# Variables not the dataset 
+
+# Pace: An estimate of how many possesions a team gets during a full 48 minute game. The higher the pace the faster the team's playstyle leading to more points 
+PACE = (reg_totals$FGA + 0.44 * reg_totals$FTA - reg_totals$OREB + reg_totals$TOV) / (reg_totals$MIN / 48)
