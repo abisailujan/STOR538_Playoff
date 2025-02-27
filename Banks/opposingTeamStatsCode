@@ -1,0 +1,75 @@
+# Code to create opposing team stats columns for the regular season totals dataset
+# All you need is the cleaned regular_season_totals_2010_2024.csv and make sure the columns are the same as the ones below
+# The starting dataset is: reg_totals
+
+
+
+reg_totals_selected <- reg_totals %>% 
+  select(SEASON_YEAR,
+         TEAM_ABBREVIATION,
+         TEAM_NAME, 
+         GAME_DATE, 
+         GAME_ID,
+         MATCHUP,
+         FGM,
+         FGA,
+         FG_PCT,
+         FG3M,
+         FG3A,
+         FG3_PCT,
+         FTM,
+         FTA,
+         FT_PCT,
+         OREB,
+         DREB,
+         REB,
+         AST,
+         TOV,
+         STL,
+         BLK,
+         BLKA,
+         PF,
+         PFD,
+         PTS,
+         PLUS_MINUS,
+         PACE
+         )
+
+opposing_stats <- c("FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
+                    "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB",
+                    "AST", "TOV", "STL", "BLK", "BLKA", "PF",
+                    "PFD", "PTS", "PLUS_MINUS", "PACE")
+
+add_opponent_stats <- function(df) {
+  df_opp <- df %>%
+    select(GAME_ID, GAME_DATE, TEAM_ABBREVIATION, all_of(opposing_stats)) %>%
+    rename_with(~ paste0("o", .), all_of(opposing_stats)) %>%
+    rename(TEAM_ABBREVIATION_opp = TEAM_ABBREVIATION)
+  
+  df %>%
+    left_join(df_opp, by = c("GAME_ID", "GAME_DATE")) %>%
+    filter(TEAM_ABBREVIATION != TEAM_ABBREVIATION_opp | is.na(TEAM_ABBREVIATION_opp))
+}
+
+
+# Dataset with opposing team game by game stats
+
+reg_totals_with_oppo <- add_opponent_stats(reg_totals_selected)
+
+# To check opposing data calculations are correct I'm grouping and comparing to official records
+
+reg_totals_with_oppo_1516 <- reg_totals_with_oppo %>% filter(SEASON_YEAR == "2015-16")
+
+reg_totals_with_oppo_grouped_1516 <- reg_totals_with_oppo_1516 %>% 
+  group_by(TEAM_NAME) %>% 
+  summarise(
+    avgPTS = round(mean(PTS, na.rm = TRUE), 1),
+    avgREB = round(mean(REB, na.rm = TRUE), 1),
+    AVGAST = round(mean(AST, na.rm = TRUE), 1),
+    avgPACE = round(mean(PACE, na.rm = TRUE), 1),
+    avgoPTS = round(mean(oPTS, na.rm = TRUE), 1),
+    avgoREB = round(mean(oREB, na.rm = TRUE), 1),
+    AVGoAST = round(mean(oAST, na.rm = TRUE), 1),
+    avgoPACE = round(mean(oPACE, na.rm = TRUE), 1),
+    
+  )
