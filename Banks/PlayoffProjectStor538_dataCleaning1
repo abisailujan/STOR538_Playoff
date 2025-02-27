@@ -1,0 +1,97 @@
+---
+title: "PlayoffProject538_1_1"
+author: "Banks Totten"
+date: "2025-02-27"
+output: html_document
+---
+
+```{r, include=FALSE, echo=FALSE, warning=FALSE, message = FALSE}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(shinythemes)
+library(ggforce)
+library(patchwork)
+library(reactable)
+library(kableExtra)
+library(purrr)
+library(gt)
+library(gridExtra)
+library(stringr)
+```
+
+
+```{r, include=FALSE, echo=FALSE, warning=FALSE, message = FALSE}
+
+playoff_box_scores <- read_csv("/Users/banks/Downloads/play_off_box_scores_2010_2024.csv")
+playoff_totals <- read_csv("/Users/banks/Downloads/play_off_totals_2010_2024.csv")
+
+
+reg_box_scores_1 <- read_csv("/Users/banks/Downloads/regular_season_box_scores_2010_2024_part_1.csv")
+reg_box_scores_2 <- read_csv("/Users/banks/Downloads/regular_season_box_scores_2010_2024_part_2.csv")
+reg_box_scores_3 <- read_csv("/Users/banks/Downloads/regular_season_box_scores_2010_2024_part_3.csv")
+reg_totals <- read_csv("/Users/banks/Downloads/regular_season_totals_2010_2024.csv")
+
+
+colSums(is.na(playoff_totals)) 
+sum(playoff_totals$AVAILABLE_FLAG == 0, na.rm = TRUE) 
+colSums(is.na(reg_totals))
+sum(reg_totals$AVAILABLE_FLAG == 0, na.rm = TRUE) 
+
+test_nba <- reg_box_scores_2 %>% 
+  group_by(gameId, game_date) %>%
+  summarise(points = sum(points, na.rm = TRUE),
+            players = n())
+
+
+hist(test_nba$points)
+```
+
+
+```{r, include=FALSE, echo=FALSE, warning=FALSE, message = FALSE}
+
+# Playoff
+
+
+playoff_totals <- playoff_totals %>% 
+  filter(!is.na(AVAILABLE_FLAG) & AVAILABLE_FLAG != 0)
+
+reg_totals <- reg_totals %>% 
+  filter(!is.na(AVAILABLE_FLAG) & AVAILABLE_FLAG != 0)
+
+playoff_box_scores <- distinct(playoff_box_scores)
+
+
+# Regular Season
+
+
+RS_BoxScores <- bind_rows(reg_box_scores_1, reg_box_scores_2, reg_box_scores_3)
+
+
+RS_BoxScores <- RS_BoxScores %>%
+  mutate(gameId = as.numeric(gameId), teamId = as.numeric(teamId))
+playoff_box_scores <- playoff_box_scores %>%
+  mutate(gameId = as.numeric(gameId), teamId = as.numeric(teamId))
+reg_totals <- reg_totals %>%
+  mutate(GAME_ID = as.numeric(GAME_ID), TEAM_ID = as.numeric(TEAM_ID))
+playoff_totals <- playoff_totals %>%
+  mutate(GAME_ID = as.numeric(GAME_ID), TEAM_ID = as.numeric(TEAM_ID))
+
+RS <- inner_join(
+  RS_BoxScores, reg_totals, 
+  by = c("gameId" = "GAME_ID", "teamId" = "TEAM_ID"))
+PO <- inner_join(
+  playoff_box_scores, playoff_totals, 
+  by = c("gameId" = "GAME_ID", "teamId" = "TEAM_ID"))
+
+NBA_Data <- bind_rows(RS, PO) %>%
+    select(-(teamSlug), -(comment), -(jerseyNum),
+             -(SEASON_YEAR), -(TEAM_ABBREVIATION),
+             -(TEAM_NAME), -(MATCHUP)) %>%
+
+  mutate(opponentTricode = str_sub(matchup, -3)) %>%
+  select(teamTricode, opponentTricode, everything())  %>%
+  
+  arrange(teamId, game_date, opponentTricode) 
+```
