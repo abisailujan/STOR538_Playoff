@@ -1,4 +1,26 @@
-# Variables not the dataset 
+# Variables not the dataset originally
+
+# Estimated Possessions: An estimate of team's possessions (not exact due to available data and assumption of free throw percentage)
+# Possessions helps to normalize for time moreso than shots and will be useful total predicitons. 
+available
+EP = FGA + (0.44 * FTA) − OREB + TO
+
+# Offensive Rebounding Percentage: A measure of how many offensive rebounds your team grabs, out of the total possible rebounding opportunities. 
+# Helps to measure teams that are better at getting second chance points and therefore might be better at scoring more total points.
+OREB_PCT = OREB/(OREB + oDREB)
+*oDREB is opponent defensive rebounds
+
+# Free Throw Ratio: A ratio of a teams free throws to their total shot attempts.
+# A higher ratio indicates a team is getting to the free throw line more often. Free throws don't  take time off the clock, and are therefore very efficient at driving up total score.
+FTR = FTA / FGA
+
+# Points Per Possession: An estimate of how many points a team gets per possession.
+# Better measure of a team's scoring efficiency than point per shot (since possessions are more all encompassing). The more efficent a team is at scoring the more total points they should score.
+PPP = PTS / (FGA + (0.44 * FTA) − OREB + TO)
+
+# Effective Field Goal Percentage: A shooting efficiency metric that adjusts for the added value of three-pointers.
+# A higher eFG% indicates a more efficient scoring performance, as it rewards teams for making high-value shots.
+EFG_PCT = (FGM + 0.5*FG3M) / FGA
 
 # Pace: An estimate of how many possesions a team gets during a full 48 minute game. The higher the pace the faster the team's playstyle leading to more points 
-PACE = (reg_totals$FGA + 0.44 * reg_totals$FTA - reg_totals$OREB + reg_totals$TOV) / (reg_totals$MIN / 48)
+PACE = (FGA + (0.44 * FTA) - OREB + TOV) / (MIN / 48)
