@@ -1,0 +1,73 @@
+# Modeling Using rolling_df2 (Rolling Averages)
+
+target_col_roll <- "TOTAL"  
+
+# Select only rolling averaged features (all columns starting with "roll_")
+numeric_features_roll <- rolling_df2 %>%
+  select(starts_with("roll_")) %>%
+  as.matrix()
+
+# Target variable remains the original TOTAL column
+y_roll <- rolling_df2[[target_col_roll]]
+
+if (is.factor(y_roll)) {
+  y_roll <- as.numeric(y_roll) - 1  
+}
+
+# Standardize the rolling features
+preproc_roll <- preProcess(numeric_features_roll, method = c("center", "scale"))
+numeric_features_roll <- predict(preproc_roll, numeric_features_roll)
+
+set.seed(123)
+folds_roll <- createFolds(y_roll, k = 10, list = TRUE, returnTrain = TRUE)
+
+# Create a new DMatrix for rolling data
+dtrain_roll <- xgb.DMatrix(data = numeric_features_roll, label = y_roll)
+
+# Define parameters for the rolling model
+params_roll <- list(
+  objective = "reg:squarederror",  # Regression use case
+  eval_metric = "mae",             # Mean Absolute Error
+  max_depth = 6, 
+  eta = 0.1,                       # Learning rate
+  subsample = 0.8,
+  colsample_bytree = 0.8,
+  nrounds = 200,                   # Boosting rounds
+  early_stopping_rounds = 10       # Stops if no improvement
+)
+
+# Perform 10-fold cross-validation on the rolling data
+cv_results_roll <- xgb.cv(
+  params = params_roll,
+  data = dtrain_roll,
+  nrounds = 200,
+  nfold = 10,                     # 10-Fold Cross-Validation
+  early_stopping_rounds = 10,
+  verbose = TRUE,
+  prediction = TRUE              # Capture fold-wise predictions
+)
+
+# Extract evaluation results
+fold_mae_roll <- cv_results_roll$evaluation_log$test_mae_mean  # Mean MAE for each round
+best_round_roll <- cv_results_roll$best_iteration              # Best iteration based on early stopping
+best_mae_roll <- fold_mae_roll[best_round_roll]                 # Best MAE at the chosen iteration
+
+# Compute Mean Absolute Deviation (MAD) for each fold
+mad_values_roll <- abs(cv_results_roll$pred - y_roll)  
+cat("MAD values for each fold (rolling data):\n")
+print(mad_values_roll)
+
+# Compute and print average MAD
+avg_mad_roll <- mean(mad_values_roll)
+cat("Average MAD across all folds (rolling data):", round(avg_mad_roll, 4), "\n")
+
+# Train the final model on the full rolling dataset using best iteration from CV
+xgb_model_roll_total <- xgb.train(
+  params = params_roll,
+  data = dtrain_roll,
+  nrounds = best_round_roll  # Use the best number of rounds from CV
+)
+
+# Feature Importance for rolling data model
+importance_roll <- xgb.importance(feature_names = colnames(numeric_features_roll), model = xgb_model_roll_total)
+xgb.plot.importance(importance_roll)
