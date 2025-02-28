@@ -3,7 +3,7 @@
 # Estimated Possessions: An estimate of team's possessions (not exact due to available data and assumption of free throw percentage)
 # Possessions helps to normalize for time moreso than shots and will be useful total predicitons. 
 available
-EP = FGA + (0.44 * FTA) − OREB + TO
+EP = FGA + (0.44 * FTA) − OREB + TOV
 
 # Offensive Rebounding Percentage: A measure of how many offensive rebounds your team grabs, out of the total possible rebounding opportunities. 
 # Helps to measure teams that are better at getting second chance points and therefore might be better at scoring more total points.
@@ -16,7 +16,7 @@ FTR = FTA / FGA
 
 # Points Per Possession: An estimate of how many points a team gets per possession.
 # Better measure of a team's scoring efficiency than point per shot (since possessions are more all encompassing). The more efficent a team is at scoring the more total points they should score.
-PPP = PTS / (FGA + (0.44 * FTA) − OREB + TO)
+PPP = PTS / (FGA + (0.44 * FTA) − OREB + TOV)
 
 # Effective Field Goal Percentage: A shooting efficiency metric that adjusts for the added value of three-pointers.
 # A higher eFG% indicates a more efficient scoring performance, as it rewards teams for making high-value shots.
