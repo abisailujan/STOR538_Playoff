@@ -1,0 +1,126 @@
+
+# Creating Averaged Data
+
+# rolling_df:
+# This dataframe calculates the rolling averages for each team's game statistics
+# based solely on the current season's data. For each team and season (grouped by TEAM_NAME and SEASON_YEAR),
+# the games are first ordered by GAME_DATE and assigned a sequential game number (GAME_NO_SEASON).
+# Then, for every numeric column, the rolling average is computed as the lagged cumulative mean 
+# (i.e., the average of all previous games in the season). Only rows from game 21 onward are kept,
+# ensuring that at least 20 prior games exist for the calculation.
+# Finally, the resulting rolling averages are rounded to 3 decimal places.
+
+
+reg_totals_full <- reg_totals_full %>%
+  group_by(TEAM_NAME, SEASON_YEAR) %>%
+  arrange(GAME_DATE, .by_group = TRUE) %>%
+  mutate(GAME_NO_SEASON = row_number()) %>%
+  ungroup()
+
+#reg_totals_test <- reg_totals_full %>% select(TEAM_NAME, GAME_DATE, SEASON_YEAR, GAME_NO_SEASON)
+
+# Rolling average of just 20 games and on
+rolling_df <- reg_totals_full %>%
+  group_by(TEAM_NAME, SEASON_YEAR) %>%       # work within each team and season
+  arrange(GAME_DATE, .by_group = TRUE) %>%      # ensure games are in order by date
+  mutate(across(where(is.numeric),
+                ~ lag(cummean(.)),
+                .names = "roll_{col}")) %>%   # calculate rolling average from prior games
+  filter(GAME_NO_SEASON >= 21) %>%             # keep only rows starting at the 21st game
+  ungroup() %>%
+  mutate(across(starts_with("roll_"), ~ round(., 3)))
+
+rolling_df_test <- rolling_df %>% select(TEAM_NAME, GAME_DATE, SEASON_YEAR, GAME_NO_SEASON, roll_FGM, roll_PTS)
+
+
+
+
+# rolling_df2:
+# This dataframe is similar to rolling_df but incorporates previous season data to better estimate early-season performance.
+# First, for each team and season, the average of each numeric stat is computed for that season (prev_season_avgs).
+# In the current season data, a helper column 'prev_season_label' is created (e.g., converting "2012-13" to "2011-12")
+# and joined with the corresponding previous season averages.
+# Then, for each numeric column, a rolling average is computed using a three-phase logic:
+#   - Game 1: If a previous season value exists, it is used; otherwise, the current game’s value is used.
+#   - Games 2–20: A weighted blend is computed, gradually shifting the weight from the previous season’s average
+#                toward the current season’s lagged cumulative average (i.e., average of all prior games).
+#   - Game 21 and beyond: The rolling average is simply the lagged cumulative mean of the current season.
+# The resulting rolling averages are rounded to 3 decimals.
+
+
+numeric_cols <- setdiff(
+  names(select(reg_totals_full, where(is.numeric))),
+  c("GAME_ID", "GAME_NO_SEASON")  # add any additional columns you want to exclude
+)
+
+### 2) Compute previous-season averages for each team & season
+# For each (TEAM_NAME, SEASON_YEAR), calculate the mean of each numeric column.
+# Then rename SEASON_YEAR to prev_SEASON_YEAR and prepend "prev_" to each stat.
+prev_season_avgs <- reg_totals_full %>%
+  group_by(TEAM_NAME, SEASON_YEAR) %>%
+  summarise(
+    across(all_of(numeric_cols), ~ mean(.x, na.rm = TRUE), .names = "prev_{col}"),
+    .groups = "drop"
+  ) %>%
+  rename(prev_SEASON_YEAR = SEASON_YEAR)
+
+### 3) In current-season data, create a label for the previous season
+# For example, if SEASON_YEAR is "2012-13", prev_season_label becomes "2011-12"
+rolling_df2 <- reg_totals_full %>%
+  mutate(
+    start_year = as.numeric(substr(SEASON_YEAR, 1, 4)),
+    end_year   = as.numeric(substr(SEASON_YEAR, 6, 7)),
+    prev_season_label = paste0(start_year - 1, "-", sprintf("%02d", end_year - 1))
+  ) %>%
+  # Join the previous-season averages (if available) by TEAM_NAME and prev_season_label
+  left_join(prev_season_avgs, by = c("TEAM_NAME", "prev_season_label" = "prev_SEASON_YEAR")) %>%
+  # Group by team and season, ordering by game date
+  group_by(TEAM_NAME, SEASON_YEAR) %>%
+  arrange(GAME_DATE, .by_group = TRUE)
+
+### 4) For each numeric column, compute the rolling average column using your logic
+# We'll loop over each column name and create a new column "roll_{col}".
+for (col in numeric_cols) {
+  new_col <- paste0("roll_", col)
+  
+  rolling_df2 <- rolling_df2 %>%
+    mutate(
+      !!new_col := {
+        # Extract the current column values
+        current_vals <- .data[[col]]
+        # Compute the cumulative mean (which includes the current game) and lag it by one,
+        # so that the current row sees the average of previous games in the season.
+        current_cum <- lag(cummean(current_vals), default = NA_real_)
+        # The current game's number within the season
+        n <- GAME_NO_SEASON
+        # Previous season's average for this column (joined in earlier)
+        p <- .data[[paste0("prev_", col)]]
+        
+        # Now compute the rolling value with the 3-phase logic:
+        case_when(
+          # Game 1: if previous season value exists, use it; otherwise use the current game value.
+          n == 1 & !is.na(p) ~ p,
+          n == 1 ~ current_vals,
+          
+          # Games 2-20: if no previous season data, just use current_cum;
+          # otherwise, compute weighted blend.
+          n < 21 & is.na(p) ~ current_cum,
+          n < 21 ~ (1 - 0.05 * (n - 1)) * p + 0.05 * (n - 1) * current_cum,
+          
+          # Games 21+: use the lagged cumulative average.
+          TRUE ~ current_cum
+        )
+      }
+    )
+}
+
+### 5) Ungroup and round all new rolling columns to 3 decimals
+rolling_df2 <- rolling_df2 %>%
+  ungroup() %>%
+  mutate(across(starts_with("roll_"), ~ round(.x, 3)))
+
+#prev_season_avgs_test <- prev_season_avgs %>% select(TEAM_NAME, prev_SEASON_YEAR, prev_PTS) %>% filter(TEAM_NAME == "Atlanta Hawks")
+
+#rolling_df2_test <- rolling_df2 %>% select(TEAM_NAME, GAME_DATE, SEASON_YEAR, GAME_NO_SEASON, roll_PTS) %>% filter(TEAM_NAME == "Atlanta Hawks")
+
+
