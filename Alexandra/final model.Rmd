@@ -1,0 +1,320 @@
+---
+title: "Final Model"
+author: "Alexandra Myers"
+date: "2025-03-05"
+output: html_document
+---
+
+
+```{r}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(xgboost)
+library(caret)
+library(Matrix)
+library(zoo)
+```
+
+# Clean + Merge
+## Read
+```{r message=FALSE}
+RS_Totals <- read_csv("~/Desktop/STOR 538/Playoff/Starting Data/regular_season_totals_2010_2024.csv")
+```
+
+## Examine
+```{r eval=FALSE, include=FALSE}
+# A) Missing Values
+colSums(is.na(RS_Totals)) # avialable flag has 4454 missing values
+sum(RS_Totals$AVAILABLE_FLAG == 0, na.rm = TRUE) # 128 zeros
+```
+
+## Clean
+```{r}
+# A) Remove rows with 0 or NA in AVAILABLE_FLAG bc "data unavailable" (README)
+RS_Totals <- RS_Totals %>% 
+  filter(!is.na(AVAILABLE_FLAG) & AVAILABLE_FLAG != 0)
+```
+
+## Merge
+```{r}
+RS_Totals <- RS_Totals %>%
+  mutate(GAME_ID = as.numeric(GAME_ID), TEAM_ID = as.numeric(TEAM_ID))
+
+NBA_Data2 <- RS_Totals %>%
+  mutate(eFG_Percentage = (FGM + 0.5*FG3M) / FGA)
+```
+
+
+```{r}
+# Pace: An estimate of how many possesions a team gets during a full 48 minute game. The higher the pace the faster the team's playstyle leading to more points 
+RS_Totals$PACE = (RS_Totals$FGA + 0.44 * RS_Totals$FTA - RS_Totals$OREB + RS_Totals$TOV) / (RS_Totals$MIN / 48)
+
+reg_totals_selected <- RS_Totals %>% 
+  select(SEASON_YEAR,
+         TEAM_ABBREVIATION,
+         TEAM_NAME, 
+         GAME_DATE, 
+         GAME_ID,
+         MATCHUP,
+         FGM,
+         FGA,
+         FG_PCT,
+         FG3M,
+         FG3A,
+         FG3_PCT,
+         FTM,
+         FTA,
+         FT_PCT,
+         OREB,
+         DREB,
+         REB,
+         AST,
+         TOV,
+         STL,
+         BLK,
+         BLKA,
+         PF,
+         PFD,
+         PTS,
+         PLUS_MINUS,
+         PACE
+         )
+
+opposing_stats <- c("FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
+                    "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB",
+                    "AST", "TOV", "STL", "BLK", "BLKA", "PF",
+                    "PFD", "PTS", "PLUS_MINUS", "PACE")
+
+add_opponent_stats <- function(df) {
+  df_opp <- df %>%
+    select(GAME_ID, GAME_DATE, TEAM_ABBREVIATION, all_of(opposing_stats)) %>%
+    rename_with(~ paste0("o", .), all_of(opposing_stats)) %>%
+    rename(TEAM_ABBREVIATION_opp = TEAM_ABBREVIATION)
+  
+  df %>%
+    left_join(df_opp, by = c("GAME_ID", "GAME_DATE")) %>%
+    filter(TEAM_ABBREVIATION != TEAM_ABBREVIATION_opp | is.na(TEAM_ABBREVIATION_opp))
+}
+
+
+# Dataset with opposing team game by game stats
+
+reg_totals_with_oppo <- add_opponent_stats(reg_totals_selected)
+
+# To check opposing data calculations are correct I'm grouping and comparing to official records
+
+reg_totals_with_oppo_1516 <- reg_totals_with_oppo %>% filter(SEASON_YEAR == "2015-16")
+
+reg_totals_with_oppo_grouped_1516 <- reg_totals_with_oppo_1516 %>% 
+  group_by(TEAM_NAME) %>% 
+  summarise(
+    avgPTS = round(mean(PTS, na.rm = TRUE), 1),
+    avgREB = round(mean(REB, na.rm = TRUE), 1),
+    AVGAST = round(mean(AST, na.rm = TRUE), 1),
+    avgPACE = round(mean(PACE, na.rm = TRUE), 1),
+    avgoPTS = round(mean(oPTS, na.rm = TRUE), 1),
+    avgoREB = round(mean(oREB, na.rm = TRUE), 1),
+    AVGoAST = round(mean(oAST, na.rm = TRUE), 1),
+    avgoPACE = round(mean(oPACE, na.rm = TRUE), 1),
+    
+  )
+
+RS_Totals1 <- RS_Totals %>%
+  mutate(eFG_Percentage = (FGM + 0.5*FG3M) / FGA)
+
+NBA_Home <- RS_Totals %>% filter(str_detect(MATCHUP, "vs\\.")) %>%
+  rename_at(vars(-c(GAME_ID, GAME_DATE)), ~paste0("H_", .))  
+NBA_Away <- RS_Totals %>% filter(str_detect(MATCHUP, "@")) %>%
+  rename_at(vars(-c(GAME_ID, GAME_DATE)), ~paste0("A_", .))  
+
+rolling <- merge(NBA_Home, NBA_Away)
+```
+
+
+```{r}
+rolling_df2 <- rolling %>%
+  group_by(H_TEAM_NAME, H_SEASON_YEAR) %>%
+  arrange(GAME_DATE, .by_group = TRUE) %>%
+  mutate(GAME_NO_SEASON = row_number()) %>%
+  ungroup()
+
+#reg_totals_test <-RS_Totals#reg_totals_test <- reg_totals_full %>% select(TEAM_NAME, GAME_DATE, SEASON_YEAR, GAME_NO_SEASON)
+
+numeric_cols <- setdiff(
+  names(select(rolling_df2, where(is.numeric))),
+  c("GAME_ID", "GAME_NO_SEASON")  # add any additional columns you want to exclude
+)
+
+### 2) Compute previous-season averages for each team & season
+# For each (TEAM_NAME, SEASON_YEAR), calculate the mean of each numeric column.
+# Then rename SEASON_YEAR to prev_SEASON_YEAR and prepend "prev_" to each stat.
+prev_season_avgs <- rolling_df2 %>%
+  group_by(H_TEAM_NAME, H_SEASON_YEAR) %>%
+  summarise(
+    across(all_of(numeric_cols), ~ mean(.x, na.rm = TRUE), .names = "prev_{col}"),
+    .groups = "drop"
+  ) %>%
+  rename(prev_SEASON_YEAR = H_SEASON_YEAR)
+
+### 3) In current-season data, create a label for the previous season
+# For example, if SEASON_YEAR is "2012-13", prev_season_label becomes "2011-12"
+rolling_df2 <- rolling_df2 %>%
+  mutate(
+    point_spread = H_PTS - A_PTS,
+    start_year = as.numeric(substr(H_SEASON_YEAR, 1, 4)),
+    end_year   = as.numeric(substr(H_SEASON_YEAR, 6, 7)),
+    prev_season_label = paste0(start_year - 1, "-", sprintf("%02d", end_year - 1))
+  ) %>%
+  # Join the previous-season averages (if available) by TEAM_NAME and prev_season_label
+  left_join(prev_season_avgs, by = c("H_TEAM_NAME", "prev_season_label" = "prev_SEASON_YEAR")) %>%
+  # Group by team and season, ordering by game date
+  group_by(H_TEAM_NAME, H_SEASON_YEAR) %>%
+  arrange(GAME_DATE, .by_group = TRUE)
+
+### 4) For each numeric column, compute the rolling average column using your logic
+# We'll loop over each column name and create a new column "roll_{col}".
+for (col in numeric_cols) {
+  new_col <- paste0("roll_", col)
+  
+  rolling_df2 <- rolling_df2 %>%
+    mutate(
+      !!new_col := {
+        # Extract the current column values
+        current_vals <- .data[[col]]
+        # Compute the cumulative mean (which includes the current game) and lag it by one,
+        # so that the current row sees the average of previous games in the season.
+        current_cum <- lag(cummean(current_vals), default = NA_real_)
+        # The current game's number within the season
+        n <- GAME_NO_SEASON
+        # Previous season's average for this column (joined in earlier)
+        p <- .data[[paste0("prev_", col)]]
+        
+        # Now compute the rolling value with the 3-phase logic:
+        case_when(
+          # Game 1: if previous season value exists, use it; otherwise use the current game value.
+          n == 1 & !is.na(p) ~ p,
+          n == 1 ~ current_vals,
+          
+          # Games 2-20: if no previous season data, just use current_cum;
+          # otherwise, compute weighted blend.
+          n < 21 & is.na(p) ~ current_cum,
+          n < 21 ~ (1 - 0.05 * (n - 1)) * p + 0.05 * (n - 1) * current_cum,
+          
+          # Games 21+: use the lagged cumulative average.
+          TRUE ~ current_cum
+        )
+      }
+    )
+}
+
+### 5) Ungroup and round all new rolling columns to 3 decimals
+rolling_df2 <- rolling_df2 %>%
+  ungroup() %>%
+  mutate(across(starts_with("roll_"), ~ round(.x, 3)))
+
+#prev_season_avgs_test <- prev_season_avgs %>% select(TEAM_NAME, prev_SEASON_YEAR, prev_PTS) %>% filter(TEAM_NAME == "Atlanta Hawks")
+
+#rolling_df2_test <- rolling_df2 %>% select(TEAM_NAME, GAME_DATE, SEASON_YEAR, GAME_NO_SEASON, roll_PTS) %>% filter(TEAM_NAME == "Atlanta Hawks")
+```
+
+```{r}
+# Modeling Using rolling_df2 (Rolling Averages)
+
+test_xgboost_model <- function(data, 
+                              target_col, 
+                              nrounds = 300, 
+                              nfold = 10, 
+                              early_stopping_rounds = 10, 
+                              params = NULL) {
+  # Load required libraries (if not already loaded)
+  require(dplyr)
+  require(caret)
+  require(xgboost)
+  
+  # Use default parameters if none are provided
+  if (is.null(params)) {
+    params <- list(
+      objective = "reg:squarederror",  # Regression objective
+      eval_metric = "mae",             # Mean Absolute Error evaluation metric
+      max_depth = 6,
+      eta = 0.05,                       # Learning rate
+      subsample = 0.8,
+      colsample_bytree = 0.8
+    )
+  }
+  
+  
+  numeric_features <- data %>%
+  select(starts_with("roll_")) %>%
+  as.matrix()
+  
+  
+  # Extract target variable (using original point_spread values)
+  y <- data[[target_col]]
+  
+  if (is.factor(y)) {
+    y <- as.numeric(y) - 1
+  }
+  
+  # Standardize features
+  preproc <- preProcess(numeric_features, method = c("center", "scale"))
+  numeric_features <- predict(preproc, numeric_features)
+  
+  # Create a DMatrix for xgboost
+  dtrain <- xgb.DMatrix(data = numeric_features, label = y)
+  
+  # Run 10-fold cross-validation with early stopping
+  set.seed(123)
+  cv_results <- xgb.cv(
+    params = params,
+    data = dtrain,
+    nrounds = nrounds,
+    nfold = nfold,
+    early_stopping_rounds = early_stopping_rounds,
+    verbose = TRUE,
+    prediction = TRUE
+  )
+  
+  # Extract evaluation information from CV
+  fold_mae <- cv_results$evaluation_log$test_mae_mean
+  best_round <- cv_results$best_iteration
+  best_mae <- fold_mae[best_round]
+  print(best_mae)
+  
+  # Compute Mean Absolute Deviation (MAD) for the predictions
+  mad_values <- abs(y - cv_results$pred)
+  avg_mad <- mean(mad_values)
+  
+  # Print the MAD values and average MAD
+  cat("MAD values for each fold (rolling data):\n")
+  print(mad_values)
+  cat("Average MAD across all folds (rolling data):", round(avg_mad, 4), "\n")
+
+  
+  # Train the final xgboost model on the full dataset using the best iteration from CV
+  xgb_model <- xgb.train(
+    params = params,
+    data = dtrain,
+    nrounds = best_round
+  )
+  
+  # Generate and display the feature importance plot
+  importance_roll <- xgb.importance(feature_names = colnames(numeric_features), model = xgb_model)
+  importance <- xgb.plot.importance(importance_roll, top_n=6)
+  print(importance)
+  xgb.plot.importance(importance_roll)
+  
+  # Return a list of results (optional) without writing over global variables
+  invisible(list(cv_results = cv_results,
+                 xgb_model = xgb_model,
+                 avg_mad = avg_mad,
+                 importance = importance))
+}
+
+
+# Just put the dataframe and the target column
+
+test_xgboost_model(rolling_df2, target_col = "point_spread")
+```
