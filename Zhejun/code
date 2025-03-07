@@ -1,1 +1,43 @@
+4.1 Poisson Regression Model
 
+poisson_model <- glm(OREB ~ rebound_differential + off_reb_rate + def_reb_rate + min_played_diff, 
+                     family = poisson, data = training_data)
+summary(poisson_model)
+mae_poisson <- mean(abs(predict(poisson_model, test_data, type = "response") - test_data$OREB))
+
+4.3 Random Forest Regression Model
+
+library(randomForest)
+rf_model <- randomForest(OREB ~ rebound_differential + off_reb_rate + def_reb_rate + min_played_diff, 
+                         data = training_data, ntree = 500, mtry = 2)
+pred_rf <- predict(rf_model, test_data)
+mae_rf <- mean(abs(pred_rf - test_data$OREB))
+
+4.4 Gradient Boosting Machines (GBM)
+
+library(gbm)
+gbm_model <- gbm(OREB ~ rebound_differential + off_reb_rate + def_reb_rate + min_played_diff, 
+                 data = training_data, distribution = "poisson", n.trees = 1000, interaction.depth = 3)
+pred_gbm <- predict(gbm_model, test_data, n.trees = 1000)
+mae_gbm <- mean(abs(pred_gbm - test_data$OREB))
+
+4.5 Neural Networks
+
+library(nnet)
+nn_model <- nnet(OREB ~ rebound_differential + off_reb_rate + def_reb_rate + min_played_diff, 
+                 data = training_data, size = 5, decay = 0.01, linout = TRUE)
+pred_nn <- predict(nn_model, test_data)
+mae_nn <- mean(abs(pred_nn - test_data$OREB))
+
+4.6 The Best Model: Negative Binomial Regression
+
+library(MASS)
+nb_model <- glm.nb(OREB ~ rebound_differential + off_reb_rate + def_reb_rate + min_played_diff, 
+                   data = training_data)
+pred_nb <- predict(nb_model, test_data, type = "response")
+mae_nb <- mean(abs(pred_nb - test_data$OREB))
+
+4.7 Generating Predictions
+
+future_games$Predicted_OREB <- predict(nb_model, future_games, type = "response")
+write.csv(future_games, "Predicted_OREB.csv", row.names = FALSE)
