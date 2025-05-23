@@ -1,0 +1,79 @@
+---
+title: "Playoff1"
+author: "Alexandra Myers"
+date: "2025-02-23"
+output: html_document
+---
+
+```{r, include = F}
+devtools::install_github("abresler/nbastatR", force=T)
+library(nbastatR)
+Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 2)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(modelr)  
+library(zoo)
+library(dplyr)
+```
+
+
+```{r}
+#Get NBA Teams
+TEAM=nba_teams(league="NBA") %>% 
+  filter(yearPlayedLast==2024,idLeague==2) %>%
+  select(nameTeam,idTeam,slugTeam)
+
+#Game Data for 2025
+GAME2024=game_logs(
+  seasons = 2025,
+  league = "NBA",
+  result_types = "team",
+  season_types = "Regular Season",
+  nest_data = F,
+  assign_to_environment = TRUE,
+  return_message = TRUE)
+```
+
+# 2025 Data
+
+```{r}
+Home2025 <- GAME2024 %>%
+  filter(grepl("vs.", slugMatchup)) %>%
+  select(-c(urlTeamSeasonLogo, slugLeague, hasVideo, numberGameTeamSeason, yearSeason, slugSeason)) %>%
+  rename_at(vars(-c(typeSeason, dateGame, idGame)), ~paste0("H_", .))
+
+Away2025 <- GAME2024 %>%
+  filter(grepl("@", slugMatchup)) %>%
+  select(-c(urlTeamSeasonLogo, slugLeague, hasVideo, numberGameTeamSeason, yearSeason, slugSeason)) %>%
+  rename_at(vars(-c(typeSeason, dateGame, idGame)), ~paste0("A_", .))
+
+data2025 <- merge(Home2025, Away2025, by = "idGame")
+
+data2025$H_WIN_Bin <- ifelse(data2025$H_isWin == "TRUE", 1, 0)
+
+# Lag variables
+data2025$H_ptsTeam <- rollapply(data2025$H_ptsTeam, width = 5, FUN = mean, fill = NA, align = "right")
+data2025$A_ptsTeam <- rollapply(data2025$A_ptsTeam, width = 5, FUN = mean, fill = NA, align = "right")
+data2025$H_win_streak <- rollapply(data2025$H_WIN_Bin, width = 5, FUN = sum, fill = NA, align = "right")
+
+write_csv(data2025, "data2025.csv")
+```
+
+- removed specific variables
+  team url
+  has video
+  league
+  
+For lag variables, the previous 2 and 4 observations are NA -- possibly remove these rows?
+
+split the variables by home and away
+
+variables created:
+  lag for home points
+  lag for away points
+  lag for home win streak
+  home win binary
+  created a variable with just the year, not the entire data
